@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: drupal-autoinstall
+data:
+  install.sh: |
+    #!/bin/bash
+    cd /var/www/html
+    
+    # Așteaptă ca baza de date să fie gata
+    while ! nc -z drupal-db 3306; do
+      echo "Waiting for database..."
+      sleep 2
+    done
+    
+    # Instalează Drupal automat
+    vendor/bin/drush site:install minimal \
+      --db-url=mysql://drupal:drupal_password@drupal-db:3306/drupal \
+      --site-name="My Kubernetes Site" \
+      --account-name=admin \
+      --account-pass=admin123 \
+      --yes
+    
+    # Setează permisiunile
+    chown -R www-data:www-data sites/default/files
+    chmod 755 sites/default
+    chmod 644 sites/default/settings.php
