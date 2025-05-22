@@ -15,35 +15,37 @@ spec:
         app: drupal
     spec:
       containers:
-      - name: drupal
-        image: localhost:32000/drupal-custom:latest
-        ports:
-        - containerPort: 80
-        env:
-        - name: MYSQL_DATABASE
-          value: drupal
-        - name: MYSQL_USER
-          value: drupal
-        - name: MYSQL_PASSWORD
-          value: drupal_password
-        - name: MYSQL_HOST
-          value: drupal-db
-        volumeMounts:
-        - name: drupal-data
-          mountPath: /opt/drupal/web/sites/default/files
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 60
-          periodSeconds: 30
+        - name: drupal
+          image: localhost:32000/custom-drupal:latest
+          ports:
+            - containerPort: 80
+          env:
+            - name: DRUPAL_DATABASE_HOST
+              value: "drupal-db"
+            - name: DRUPAL_DATABASE_PORT
+              value: "3306"
+            - name: DRUPAL_DATABASE_NAME
+              value: "drupal"
+            - name: DRUPAL_DATABASE_USERNAME
+              value: "drupal"
+            - name: DRUPAL_DATABASE_PASSWORD
+              value: "drupalpassword"
+          volumeMounts:
+            - name: drupal-files
+              mountPath: /var/www/html/sites/default/files
+          readinessProbe:
+            httpGet:
+              path: /core/install.php
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /core/install.php
+              port: 80
+            initialDelaySeconds: 60
+            periodSeconds: 30
       volumes:
-      - name: drupal-data
-        persistentVolumeClaim:
-          claimName: drupal-pvc
+        - name: drupal-files
+          persistentVolumeClaim:
+            claimName: drupal-files-pvc

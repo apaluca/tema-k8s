@@ -3,7 +3,7 @@
 ## 🎯 Descriere
 
 Proiect academic care implementează un site web complet cu:
-- **🌐 CMS Drupal** cu configurare automată și integrări iframe (6 replici, MariaDB)
+- **🌐 CMS Drupal** cu MySQL și tema Mahi (6 replici)
 - **💬 Sistem de chat** în timp real (WebSocket, Node.js + Nginx, Vue.js, MongoDB)
 - **🤖 Aplicație AI OCR** (Azure Computer Vision, Azure Blob Storage, Azure SQL)
 
@@ -14,8 +14,8 @@ Infrastructura este gestionată complet prin **Kubernetes** cu imagini Docker cu
 ### Stack software
 - **Backend**: Node.js 18, Express, WebSocket, Nginx
 - **Frontend**: Vue.js 3, Axios
-- **CMS**: Drupal 10 cu temă personalizată
-- **Baze de date**: MariaDB, MongoDB, Azure SQL
+- **CMS**: Drupal 10 cu tema Mahi și MySQL 8.0
+- **Baze de date**: MySQL, MongoDB, Azure SQL
 - **Cloud**: Azure Blob Storage, Computer Vision OCR
 - **Containerizare**: Docker multi-stage builds
 - **Orchestrare**: Kubernetes (MicroK8s)
@@ -25,6 +25,7 @@ Infrastructura este gestionată complet prin **Kubernetes** cu imagini Docker cu
 | Componentă | Replici | Port intern | NodePort | URL extern |
 |------------|---------|-------------|----------|------------|
 | **Drupal CMS** | 6 | 80 | 30080 | `http://NODE_IP:30080` |
+| **Drupal Database** | 1 | 3306 | - | Intern |
 | **Chat Backend** | 5 | 80 | 30088 | `ws://NODE_IP:30088` |
 | **Chat Frontend** | 1 | 80 | 30090 | `http://NODE_IP:30090` |
 | **AI Backend** | 1 | 3001 | 30101 | `http://NODE_IP:30101` |
@@ -95,9 +96,9 @@ docker push localhost:32000/ai-backend:latest
 docker build -t localhost:32000/ai-frontend:latest ./ai/frontend
 docker push localhost:32000/ai-frontend:latest
 
-# Drupal Custom
-docker build -t localhost:32000/drupal-custom:latest ./drupal
-docker push localhost:32000/drupal-custom:latest
+# Drupal Custom (versiune nouă simplificată)
+docker build -t localhost:32000/custom-drupal:latest ./drupal
+docker push localhost:32000/custom-drupal:latest
 ```
 
 #### 3. 🎯 Deploy complet (o singură comandă)
@@ -121,7 +122,7 @@ echo "Node IP: $NODE_IP"
 ```
 
 ### 🌐 Accesare aplicații
-- **Drupal CMS**: `http://NODE_IP:30080` (admin/admin123)
+- **Drupal CMS**: `http://NODE_IP:30080` (instalare manuală necesară)
 - **Chat Live**: `http://NODE_IP:30090`
 - **AI OCR**: `http://NODE_IP:30180`
 
@@ -136,19 +137,50 @@ curl http://$NODE_IP:30101/api/health      # AI Backend health
 wscat -c ws://$NODE_IP:30088               # Chat Backend
 ```
 
-## 🎨 Caracteristici Drupal custom
+## 🎨 Configurare Drupal
 
-### Configurare automată
-- **Instalare automată** la primul boot (fără intervenție manuală)
-- **Temă personalizată** cu design modern și responsiv
-- **Integrări iframe** pre-configurate pentru chat și AI
-- **Conținut demo** cu linkuri către aplicații
-- **Credențiale admin**: `admin` / `admin123`
+### Instalare manuală
+După deployment, accesează `http://NODE_IP:30080` și urmează pașii:
 
-### Pagini create automat
-1. **🏠 Homepage** - Pagina principală cu linkuri către chat și AI
-2. **💬 Live Chat** - Iframe cu aplicația de chat
-3. **🤖 AI OCR** - Iframe cu aplicația AI pentru procesare imagini
+1. **Selectează limba**: English
+2. **Profil de instalare**: Standard
+3. **Configurare bază de date**:
+   - Database host: `drupal-db`
+   - Database name: `drupal`
+   - Database username: `drupal`
+   - Database password: `drupalpassword`
+4. **Configurare site**:
+   - Site name: Kubernetes Demo Site
+   - Admin username: `admin`
+   - Admin password: `admin123`
+   - Admin email: `admin@example.com`
+
+### Activare temă Mahi
+După instalare:
+```bash
+# Conectează-te la un pod Drupal
+microk8s kubectl exec -it deployment/drupal -- bash
+
+# Activează tema Mahi
+cd /var/www/html
+vendor/bin/drush theme:enable mahi
+vendor/bin/drush config:set system.theme default mahi
+```
+
+### Adăugare conținut cu iframe-uri
+Creează pagini noi în Drupal și adaugă conținut HTML:
+
+**Pentru Chat:**
+```html
+<h2>Real-time Chat Application</h2>
+<iframe src="http://NODE_IP:30090" width="100%" height="600px" frameborder="0"></iframe>
+```
+
+**Pentru AI OCR:**
+```html
+<h2>OCR Image Processing</h2>
+<iframe src="http://NODE_IP:30180" width="100%" height="700px" frameborder="0"></iframe>
+```
 
 ## 📁 Structura proiectului
 
@@ -160,56 +192,13 @@ wscat -c ws://$NODE_IP:30088               # Chat Backend
 ├── 💬 chat/                         # Sistem chat complet
 │   ├── backend/                     # Node.js + Nginx + WebSocket
 │   ├── frontend/                    # Vue.js client
-│   └── db/                          # MongoDB
+│   └── db/                          # MongoDB (chat-db)
 └── 🤖 ai/                           # Aplicație OCR
     ├── backend/                     # Node.js + Azure SDK
     └── frontend/                    # Vue.js upload interface
 ```
 
-## 🔧 Troubleshooting
-
-### Probleme comune
-
-#### Pod-urile nu pornesc
-```bash
-# Verifică log-urile
-microk8s kubectl logs -l app=drupal
-microk8s kubectl logs -l app=chat-backend
-microk8s kubectl logs -l app=ai-backend
-
-# Verifică resursele
-microk8s kubectl describe pod <pod-name>
-```
-
-#### Servicii NodePort nu răspund
-```bash
-# Verifică dacă porturile sunt deschise
-ss -tlnp | grep 30080
-ss -tlnp | grep 30088
-
-# Restart servicii
-microk8s kubectl rollout restart deployment/drupal
-```
-
-#### WebSocket connection failed
-```bash
-# Test port WebSocket
-telnet $NODE_IP 30088
-
-# Verifică log-uri chat backend
-microk8s kubectl logs -l app=chat-backend -f
-```
-
-#### Azure services errors
-```bash
-# Verifică secretele
-microk8s kubectl get secrets azure-secrets -o yaml
-
-# Test AI backend
-curl http://$NODE_IP:30101/api/debug
-```
-
-### 🧹 Cleanup complet
+## 🧹 Cleanup complet
 ```bash
 # Șterge toate resursele
 microk8s kubectl delete -k .
@@ -218,24 +207,15 @@ microk8s kubectl delete -k .
 microk8s kubectl get all
 ```
 
-## 📊 Monitorizare
+## 📊 Convenții de denumire
 
-### Log-uri în timp real
-```bash
-# Toate pod-urile
-microk8s kubectl logs -l app=drupal -f --all-containers=true
+Proiectul urmează convenții consistente pentru toate componentele:
 
-# Specific pe aplicație
-microk8s kubectl logs -l app=chat-backend -f
-microk8s kubectl logs -l app=ai-backend -f
-```
-
-### Statistici resurse
-```bash
-# CPU și memorie
-microk8s kubectl top nodes
-microk8s kubectl top pods
-```
+- **drupal-db**: Baza de date MySQL pentru Drupal
+- **chat-db**: Baza de date MongoDB pentru chat  
+- **Servicii**: `<component>-service.yaml`
+- **Deployment-uri**: `<component>-deployment.yaml`
+- **PVC-uri**: `<component>-pvc.yaml`
 
 ## ✅ Conformitate cerințe temă
 
@@ -247,7 +227,7 @@ microk8s kubectl top pods
 - ✅ **Kubernetes** - Deployment-uri, Services, PVC-uri, Secrets  
 - ✅ **Registry privat** - MicroK8s registry localhost:32000  
 - ✅ **Single apply** - Deployment complet cu `kubectl apply -k .`
-- ✅ **Zero configurare manuală** - Totul funcționează după apply
+- ✅ **Zero configurare manuală după deploy** - Doar instalarea Drupal prin web UI
 
 ---
 

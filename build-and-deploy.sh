@@ -82,12 +82,12 @@ cd ../..
 print_success "ai-frontend built and pushed"
 
 # 5. Drupal Custom
-print_step "Building drupal-custom..."
+print_step "Building custom-drupal..."
 cd drupal
-docker build -t localhost:32000/drupal-custom:latest .
-docker push localhost:32000/drupal-custom:latest
+docker build -t localhost:32000/custom-drupal:latest .
+docker push localhost:32000/custom-drupal:latest
 cd ..
-print_success "drupal-custom built and pushed"
+print_success "custom-drupal built and pushed"
 
 # Verifică secretele Azure
 print_step "Checking Azure secrets configuration..."
