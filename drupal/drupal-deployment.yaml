@@ -14,41 +14,9 @@ spec:
       labels:
         app: drupal
     spec:
-      # Container de initializare
-      initContainers:
-      - name: init-drupal-config
-        image: busybox:latest
-        command: ["/bin/sh", "-c"]
-        args:
-        - |
-          cd /drupal-data
-          mkdir -p sites/default
-          
-          # Descarca direct fisierul default.settings.php
-          if [ ! -f sites/default/default.settings.php ]; then
-            echo "Downloading default.settings.php..."
-            wget -q -O sites/default/default.settings.php https://raw.githubusercontent.com/drupal/drupal/10.0.x/sites/default/default.settings.php || \
-            curl -s -o sites/default/default.settings.php https://raw.githubusercontent.com/drupal/drupal/10.0.x/sites/default/default.settings.php
-          fi
-          
-          # Copiaza settings.php
-          cp sites/default/default.settings.php sites/default/settings.php
-          
-          # Creeaza directorul files
-          mkdir -p sites/default/files
-          
-          # Seteaza permisiuni
-          chmod 777 sites/default
-          chmod 666 sites/default/settings.php
-          chmod 777 sites/default/files
-          
-          echo "Drupal configuration files created successfully"
-        volumeMounts:
-        - name: drupal-data
-          mountPath: /drupal-data
       containers:
       - name: drupal
-        image: drupal:10.0
+        image: drupal:10.0-apache
         ports:
         - containerPort: 80
         env:
@@ -62,7 +30,20 @@ spec:
           value: drupal-db
         volumeMounts:
         - name: drupal-data
-          mountPath: /var/www/html/sites
+          mountPath: /var/www/html/sites/default/files
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - /bin/bash
+              - -c
+              - |
+                if [ ! -f /var/www/html/sites/default/settings.php ]; then
+                  cp /var/www/html/sites/default/default.settings.php /var/www/html/sites/default/settings.php
+                  chmod 666 /var/www/html/sites/default/settings.php
+                  mkdir -p /var/www/html/sites/default/files
+                  chmod 777 /var/www/html/sites/default/files
+                fi
       volumes:
       - name: drupal-data
         persistentVolumeClaim:
