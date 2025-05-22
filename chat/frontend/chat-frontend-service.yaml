@@ -3,9 +3,10 @@ kind: Service
 metadata:
   name: chat-frontend
 spec:
-  type: LoadBalancer
+  type: NodePort
   ports:
   - port: 90
     targetPort: 80
+    nodePort: 30090  # Mapare pentru portul 90
   selector:
     app: chat-frontend

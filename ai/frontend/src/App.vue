@@ -66,8 +66,8 @@ export default {
             ocrResult: null,
             error: null,
             history: [],
-            // API URL through Ingress
-            backendUrl: `http://${window.location.hostname}/api`
+            // API URL folosind NodePort pentru AI backend
+            backendUrl: `http://${window.location.hostname}:30301/api`
         };
     },
     created() {
