@@ -104,16 +104,46 @@ if grep -q "your_.*_connection_string\|your_.*_api_key" secrets/azure-secrets.ya
 fi
 print_success "Azure secrets are configured"
 
+# Curăță job-urile anterioare dacă există
+print_step "Cleaning up previous installation jobs..."
+microk8s kubectl delete job drupal-install 2>/dev/null || true
+print_success "Cleanup completed"
+
 # Deploy la Kubernetes
 print_step "Deploying to Kubernetes cluster..."
 microk8s kubectl apply -k .
 print_success "All resources deployed to Kubernetes"
 
-# Așteaptă ca pod-urile să fie ready
-print_step "Waiting for pods to be ready..."
-microk8s kubectl wait --for=condition=ready pod -l app=drupal-db --timeout=120s
-microk8s kubectl wait --for=condition=ready pod -l app=chat-db --timeout=120s
+# Așteaptă ca baza de date să fie ready
+print_step "Waiting for databases to be ready..."
+microk8s kubectl wait --for=condition=ready pod -l app=drupal-db --timeout=180s
+microk8s kubectl wait --for=condition=ready pod -l app=chat-db --timeout=180s
 print_success "Databases are ready"
+
+# Așteaptă ca job-ul de instalare Drupal să se termine
+print_step "Waiting for Drupal installation job to complete..."
+if microk8s kubectl wait --for=condition=complete job/drupal-install --timeout=600s; then
+    print_success "Drupal installation job completed successfully!"
+    
+    # Arată log-urile job-ului
+    echo ""
+    echo "📋 Installation job logs:"
+    microk8s kubectl logs job/drupal-install || true
+else
+    print_error "Drupal installation job failed or timed out"
+    echo ""
+    echo "📋 Job status:"
+    microk8s kubectl describe job drupal-install
+    echo ""
+    echo "📋 Job logs:"
+    microk8s kubectl logs job/drupal-install || true
+    exit 1
+fi
+
+# Așteaptă ca toate pod-urile să fie ready
+print_step "Waiting for all pods to be ready..."
+microk8s kubectl wait --for=condition=ready pod -l app=drupal --timeout=300s
+print_success "All Drupal pods are ready"
 
 # Verifică status-ul serviciilor
 print_step "Checking services status..."
@@ -124,6 +154,10 @@ microk8s kubectl get services --field-selector spec.type=NodePort -o wide
 echo ""
 echo "🔍 Pods Status:"
 microk8s kubectl get pods -o wide
+
+echo ""
+echo "🔍 Job Status:"
+microk8s kubectl get jobs
 
 # Obține IP-ul nodului
 NODE_IP=$(microk8s kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
@@ -138,12 +172,15 @@ echo "  AI Backend:     http://$NODE_IP:30101"
 
 echo ""
 print_success "Deployment completed successfully!"
-print_warning "Note: It may take a few minutes for all services to be fully operational."
-print_warning "Check Drupal installation progress with: microk8s kubectl logs -l app=drupal"
+print_success "Drupal is pre-configured with admin/admin123"
+print_warning "Drupal pages include Chat and AI OCR applications via iframes"
 
 echo ""
 echo "🔧 Useful commands:"
-echo "  Check pods:     microk8s kubectl get pods"
-echo "  Check services: microk8s kubectl get services"
-echo "  View logs:      microk8s kubectl logs -l app=<app-name>"
-echo "  Delete all:     microk8s kubectl delete -k ."
+echo "  Check pods:        microk8s kubectl get pods"
+echo "  Check services:    microk8s kubectl get services"
+echo "  Check jobs:        microk8s kubectl get jobs"
+echo "  View Drupal logs:  microk8s kubectl logs -l app=drupal"
+echo "  View job logs:     microk8s kubectl logs job/drupal-install"
+echo "  Delete all:        microk8s kubectl delete -k ."
+echo "  Delete job only:   microk8s kubectl delete job drupal-install"

@@ -7,6 +7,7 @@ resources:
   - drupal/drupal-db-pvc.yaml
   - drupal/drupal-db-deployment.yaml
   - drupal/drupal-db-service.yaml
+  - drupal/drupal-install-job.yaml
   - drupal/drupal-deployment.yaml
   - drupal/drupal-service.yaml
   

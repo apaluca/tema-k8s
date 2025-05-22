@@ -12,11 +12,11 @@ RUN composer require drush/drush && \
 
 # Copy our custom scripts
 COPY settings.php /tmp/settings.php
-COPY auto-install.sh /usr/local/bin/
+COPY drupal-install-job.sh /usr/local/bin/
 COPY entrypoint.sh /usr/local/bin/
 
-# Make scripts executable
-RUN chmod +x /usr/local/bin/auto-install.sh && \
+# Make scripts executable and set permissions
+RUN chmod +x /usr/local/bin/drupal-install-job.sh && \
     chmod +x /usr/local/bin/entrypoint.sh && \
     mkdir -p /var/www/html/sites/default/files && \
     chmod 777 /var/www/html/sites/default && \
