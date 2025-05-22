@@ -21,15 +21,28 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
         - |
-          mkdir -p /drupal-data/sites/default
-          if [ ! -f /drupal-data/sites/default/default.settings.php ]; then
-            wget -q -O /drupal-data/sites/default/default.settings.php https://raw.githubusercontent.com/drupal/drupal/10.0.x/sites/default/default.settings.php
+          cd /drupal-data
+          mkdir -p sites/default
+          
+          # Descarca direct fisierul default.settings.php
+          if [ ! -f sites/default/default.settings.php ]; then
+            echo "Downloading default.settings.php..."
+            wget -q -O sites/default/default.settings.php https://raw.githubusercontent.com/drupal/drupal/10.0.x/sites/default/default.settings.php || \
+            curl -s -o sites/default/default.settings.php https://raw.githubusercontent.com/drupal/drupal/10.0.x/sites/default/default.settings.php
           fi
-          cp -n /drupal-data/sites/default/default.settings.php /drupal-data/sites/default/settings.php 2>/dev/null || true
-          mkdir -p /drupal-data/sites/default/files
-          chmod 777 /drupal-data/sites/default
-          chmod 666 /drupal-data/sites/default/settings.php
-          chmod 777 /drupal-data/sites/default/files
+          
+          # Copiaza settings.php
+          cp sites/default/default.settings.php sites/default/settings.php
+          
+          # Creeaza directorul files
+          mkdir -p sites/default/files
+          
+          # Seteaza permisiuni
+          chmod 777 sites/default
+          chmod 666 sites/default/settings.php
+          chmod 777 sites/default/files
+          
+          echo "Drupal configuration files created successfully"
         volumeMounts:
         - name: drupal-data
           mountPath: /drupal-data
