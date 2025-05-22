@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: drupal
+  labels:
+    app: drupal
+spec:
+  replicas: 6
+  selector:
+    matchLabels:
+      app: drupal
+  template:
+    metadata:
+      labels:
+        app: drupal
+    spec:
+      # Container de initializare
+      initContainers:
+      - name: init-drupal-config
+        image: busybox:latest
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          mkdir -p /drupal-data/sites/default
+          if [ ! -f /drupal-data/sites/default/default.settings.php ]; then
+            wget -q -O /drupal-data/sites/default/default.settings.php https://raw.githubusercontent.com/drupal/drupal/10.0.x/sites/default/default.settings.php
+          fi
+          cp -n /drupal-data/sites/default/default.settings.php /drupal-data/sites/default/settings.php 2>/dev/null || true
+          mkdir -p /drupal-data/sites/default/files
+          chmod 777 /drupal-data/sites/default
+          chmod 666 /drupal-data/sites/default/settings.php
+          chmod 777 /drupal-data/sites/default/files
+        volumeMounts:
+        - name: drupal-data
+          mountPath: /drupal-data
+      containers:
+      - name: drupal
+        image: drupal:10.0
+        ports:
+        - containerPort: 80
+        env:
+        - name: MYSQL_DATABASE
+          value: drupal
+        - name: MYSQL_USER
+          value: drupal
+        - name: MYSQL_PASSWORD
+          value: drupal_password
+        - name: MYSQL_HOST
+          value: drupal-db
+        volumeMounts:
+        - name: drupal-data
+          mountPath: /var/www/html/sites
+      volumes:
+      - name: drupal-data
+        persistentVolumeClaim:
+          claimName: drupal-pvc
