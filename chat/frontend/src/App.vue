@@ -35,12 +35,13 @@ export default {
     },
     methods: {
         connectWebSocket() {
-            // Connect to chat backend prin LoadBalancer IP
-            const chatBackendIP = '10.0.0.11';  // IP LoadBalancer pentru chat backend
-            const port = 88;
+            // Connect to chat backend prin NodePort
+            // Foloseste IP-ul nodului si portul NodePort 30088
+            const nodeIP = window.location.hostname; // IP-ul nodului pe care ruleaza
+            const nodePort = 30088; // NodePort pentru chat backend
 
             // Create WebSocket connection
-            this.socket = new WebSocket(`ws://${chatBackendIP}:${port}`);
+            this.socket = new WebSocket(`ws://${nodeIP}:${nodePort}`);
 
             this.socket.onopen = () => {
                 console.log('Connected to WebSocket server');

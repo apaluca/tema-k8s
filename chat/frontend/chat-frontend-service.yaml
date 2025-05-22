@@ -3,9 +3,11 @@ kind: Service
 metadata:
   name: chat-frontend
 spec:
-  type: ClusterIP
+  type: NodePort
   ports:
   - port: 80
     targetPort: 80
+    nodePort: 30090
+    protocol: TCP
   selector:
     app: chat-frontend
