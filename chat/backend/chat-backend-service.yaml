@@ -3,10 +3,9 @@ kind: Service
 metadata:
   name: chat-backend
 spec:
-  type: NodePort
+  type: ClusterIP
   ports:
-  - port: 88
-    targetPort: 80  # Backend-ul asculta pe portul 80 intern
-    nodePort: 30088  # Mapare pentru portul 88
+  - port: 80
+    targetPort: 80
   selector:
     app: chat-backend

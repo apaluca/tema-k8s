@@ -3,10 +3,9 @@ kind: Service
 metadata:
   name: ai-frontend
 spec:
-  type: NodePort
+  type: ClusterIP
   ports:
   - port: 80
     targetPort: 80
-    nodePort: 30302
   selector:
     app: ai-frontend

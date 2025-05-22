@@ -66,8 +66,7 @@ export default {
             ocrResult: null,
             error: null,
             history: [],
-            // API URL folosind NodePort pentru AI backend
-            backendUrl: `http://${window.location.hostname}:30301/api`
+            backendUrl: 'http://10.0.0.13:3001/api'  // IP LoadBalancer pentru AI backend
         };
     },
     created() {

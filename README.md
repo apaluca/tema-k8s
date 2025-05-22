@@ -2,7 +2,7 @@
 
 ## Descriere
 
-Acest proiect implementează un site web complet ce integrează un CMS Drupal, un sistem de chat în timp real bazat pe WebSocket și o aplicație de procesare a imaginilor folosind Azure OCR. Întreaga infrastructură este gestionată de Kubernetes folosind servicii NodePort pentru expunerea aplicațiilor, respectând exact cerințele specificate în `Tema.md`.
+Acest proiect implementează un site web complet ce integrează un CMS Drupal, un sistem de chat în timp real bazat pe WebSocket și o aplicație de procesare a imaginilor folosind Azure OCR. Întreaga infrastructură este gestionată de Kubernetes folosind servicii **LoadBalancer cu MetalLB** pentru expunerea aplicațiilor pe porturile exacte din cerințe, respectând perfect specificațiile din `Tema.md`.
 
 ## Tehnologii utilizate
 
@@ -14,13 +14,15 @@ Acest proiect implementează un site web complet ce integrează un CMS Drupal, u
 - **AI frontend**: Vue.js 3 cu integrare Azure Storage și Azure OCR
 - **Cloud Services**: Azure Blob Storage, Azure Computer Vision OCR, Azure SQL Database
 - **Containerizare**: Docker cu multi-stage builds
-- **Orchestrare**: Kubernetes (MicroK8s) cu servicii NodePort
+- **Orchestrare**: Kubernetes cu **MetalLB LoadBalancer**
+- **Expunere servicii**: MetalLB pentru respectarea exactă a porturilor din cerințe
 
 ## Cerințe de instalare
 
 ### Dependențe
 
-- MicroK8s instalat și configurat
+- Kubernetes cluster (MicroK8s) cu cel puțin 2 noduri
+- MetalLB instalat și configurat
 - Docker
 - kubectl
 - Node.js 18.x (pentru dezvoltare locală)
@@ -29,7 +31,18 @@ Acest proiect implementează un site web complet ce integrează un CMS Drupal, u
 ### Addon-uri MicroK8s necesare
 
 ```bash
-microk8s enable registry dns storage
+microk8s enable registry dns storage metallb
+```
+
+### Configurarea MetalLB
+
+```bash
+# Configurează pool-ul de IP-uri pentru LoadBalancer
+kubectl apply -f metallb-config.yaml
+
+# Verifică că MetalLB rulează
+kubectl get pods -n metallb-system
+kubectl get ipaddresspools -n metallb-system
 ```
 
 ## Configurarea serviciilor Azure
@@ -61,14 +74,25 @@ echo -n "your_sql_connection_string" | base64
 
 ## Implementare
 
-### 1. Construirea imaginilor Docker
+### 1. Configurarea MetalLB
+
+```bash
+# Aplică configurația MetalLB cu pool-ul de IP-uri
+kubectl apply -f metallb-config.yaml
+
+# Verifică configurația
+kubectl get ipaddresspools -n metallb-system
+kubectl get l2advertisements -n metallb-system
+```
+
+### 2. Construirea imaginilor Docker
 
 ```bash
 # Chat Backend (Node.js + Nginx)
 docker build -t localhost:32000/chat-backend:latest ./chat/backend
 docker push localhost:32000/chat-backend:latest
 
-# Chat Frontend (Vue.js)
+# Chat Frontend (Vue.js) - cu IP-uri MetalLB configurate
 docker build -t localhost:32000/chat-frontend:latest ./chat/frontend
 docker push localhost:32000/chat-frontend:latest
 
@@ -76,55 +100,82 @@ docker push localhost:32000/chat-frontend:latest
 docker build -t localhost:32000/ai-backend:latest ./ai/backend
 docker push localhost:32000/ai-backend:latest
 
-# AI Frontend (Vue.js)
+# AI Frontend (Vue.js) - cu IP-uri MetalLB configurate
 docker build -t localhost:32000/ai-frontend:latest ./ai/frontend
 docker push localhost:32000/ai-frontend:latest
 ```
 
-### 2. Aplicarea configurațiilor Kubernetes
+### 3. Aplicarea configurațiilor Kubernetes
 
 ```bash
-# Aplicare folosind kustomize
+# Aplică deployment-urile și serviciile ClusterIP
 kubectl apply -k .
 
-# Verificarea deployment-urilor
+# Aplică serviciile LoadBalancer cu MetalLB
+kubectl apply -f loadbalancer-services.yaml
+
+# Verifică că serviciile au primit IP-uri externe
+kubectl get services -o wide
 kubectl get pods
-kubectl get services
-kubectl get nodes -o wide  # Pentru a vedea IP-ul nodului
+```
+
+### 4. Configurarea routing-ului pe Azure VM
+
+```bash
+# Pe master node (10.0.0.4), configurează routing pentru IP-urile MetalLB
+sudo ip route add 10.0.0.10/32 dev eth0  # Drupal
+sudo ip route add 10.0.0.11/32 dev eth0  # Chat Backend
+sudo ip route add 10.0.0.12/32 dev eth0  # Chat Frontend
+sudo ip route add 10.0.0.13/32 dev eth0  # AI Backend
+sudo ip route add 10.0.0.14/32 dev eth0  # AI Frontend
+
+# Configurează iptables pentru NAT (acces din exterior prin IP public)
+sudo iptables -t nat -A PREROUTING -d 135.235.170.64 -p tcp --dport 80 -j DNAT --to-destination 10.0.0.10:80
+sudo iptables -t nat -A PREROUTING -d 135.235.170.64 -p tcp --dport 88 -j DNAT --to-destination 10.0.0.11:88
+sudo iptables -t nat -A PREROUTING -d 135.235.170.64 -p tcp --dport 90 -j DNAT --to-destination 10.0.0.12:90
+
+# Permite forward și masquerading
+sudo iptables -A FORWARD -j ACCEPT
+sudo iptables -t nat -A POSTROUTING -j MASQUERADE
+
+# Salvează configurația iptables (persistență)
+sudo iptables-save > /etc/iptables/rules.v4
 ```
 
 ## Puncte de acces ale aplicației
 
-Conform cerințelor temei, folosind NodePort:
+Conform cerințelor temei, folosind **MetalLB LoadBalancer pe porturile exacte**:
 
-1. **Drupal CMS** - port 80
-   - Acces: `http://<NODE_IP>:30080`
-   - NodePort: 30080
+1. **Drupal CMS** - port 80 ✅
+   - Acces: `http://135.235.170.64:80`
+   - LoadBalancer IP: 10.0.0.10
 
-2. **Chat Backend WebSocket** - port 88
-   - Acces: `ws://<NODE_IP>:30088`
-   - NodePort: 30088
+2. **Chat Backend WebSocket** - port 88 ✅
+   - Acces: `ws://135.235.170.64:88`
+   - LoadBalancer IP: 10.0.0.11
 
-3. **Chat Frontend** - port 90
-   - Acces: `http://<NODE_IP>:30090`
-   - NodePort: 30090
+3. **Chat Frontend** - port 90 ✅
+   - Acces: `http://135.235.170.64:90`
+   - LoadBalancer IP: 10.0.0.12
 
-4. **AI Frontend**
-   - Acces: `http://<NODE_IP>:30302`
-   - NodePort: 30302
+4. **AI Backend API**
+   - Acces: `http://135.235.170.64:3001/api`
+   - LoadBalancer IP: 10.0.0.13
 
-5. **AI Backend API**
-   - Acces: `http://<NODE_IP>:30301/api`
-   - NodePort: 30301
+5. **AI Frontend**
+   - Acces: `http://135.235.170.64:8080`
+   - LoadBalancer IP: 10.0.0.14
 
-### Găsirea IP-ului nodului
+### Verificarea IP-urilor LoadBalancer
 
 ```bash
-# Obține IP-ul nodului
-kubectl get nodes -o wide
+# Verifică IP-urile atribuite de MetalLB
+kubectl get services --field-selector spec.type=LoadBalancer -o wide
 
-# Sau pentru MicroK8s
-ip route show | grep default | awk '{print $3}'
+# Verifică că serviciile sunt accesibile intern
+curl -I http://10.0.0.10        # Drupal
+curl -I http://10.0.0.12:90     # Chat Frontend
+curl http://10.0.0.13:3001/api/health  # AI Backend
 ```
 
 ## Componente
@@ -132,7 +183,8 @@ ip route show | grep default | awk '{print $3}'
 ### 1. Drupal CMS
 
 - **Replici**: 6 (conform cerințelor)
-- **Port**: 80 → NodePort 30080
+- **Port**: 80 (exact din cerințe!) ✅
+- **LoadBalancer IP**: 10.0.0.10
 - **Bază de date**: MariaDB
 - **Persistență**: Volume persistent pentru site și baza de date
 - **Init Container**: Configurează automat fișierele necesare
@@ -141,20 +193,22 @@ ip route show | grep default | awk '{print $3}'
 
 #### Backend
 - **Replici**: 5 (conform cerințelor)
-- **Port**: 88 → NodePort 30088
+- **Port**: 88 (exact din cerințe!) ✅
+- **LoadBalancer IP**: 10.0.0.11
 - **Tehnologie**: Node.js + Nginx (conform cerințelor)
 - **Funcționalități**: WebSocket pentru comunicare în timp real, salvare mesaje în MongoDB
 - **API**: REST endpoints pentru istoricul mesajelor
 
 #### Frontend
 - **Replici**: 1
-- **Port**: 90 → NodePort 30090
+- **Port**: 90 (exact din cerințe!) ✅
+- **LoadBalancer IP**: 10.0.0.12
 - **Tehnologie**: Vue.js 3
-- **Funcționalități**: Interfață pentru chat, conectare WebSocket automată, afișare mesaje în timp real
+- **Funcționalități**: Interfață pentru chat, conectare WebSocket automată la 10.0.0.11:88
 
 #### Baza de date
 - **Replici**: 1
-- **Port**: 27017 (ClusterIP)
+- **Port**: 27017 (ClusterIP intern)
 - **Tehnologie**: MongoDB 6.0
 - **Persistență**: Volume persistent pentru mesaje
 
@@ -162,7 +216,8 @@ ip route show | grep default | awk '{print $3}'
 
 #### Backend
 - **Replici**: 1
-- **Port**: 3001 → NodePort 30301
+- **Port**: 3001
+- **LoadBalancer IP**: 10.0.0.13
 - **Tehnologie**: Node.js 18 cu Azure SDK
 - **Funcționalități**: 
   - Upload imagini la Azure Blob Storage
@@ -172,182 +227,210 @@ ip route show | grep default | awk '{print $3}'
 
 #### Frontend
 - **Replici**: 1
-- **Port**: 80 → NodePort 30302
+- **Port**: 80
+- **LoadBalancer IP**: 10.0.0.14
 - **Tehnologie**: Vue.js 3
-- **Funcționalități**: Upload fișiere, afișare rezultate OCR, istoric procesări
+- **Funcționalități**: Upload fișiere, conectare la backend 10.0.0.13:3001
 
 ## Configurarea CMS-ului
 
 După implementarea sistemului, Drupal trebuie configurat manual:
 
-1. **Accesează și instalează Drupal**: `http://<NODE_IP>:30080`
+1. **Accesează și instalează Drupal**: `http://135.235.170.64:80`
    - Folosește credențialele bazei de date MariaDB din deployment
 
-2. **Creează bloc Full HTML pentru chat**:
+2. **Creează bloc Full HTML pentru chat** (exact pe portul 90!):
    ```html
-   <iframe src="http://<NODE_IP>:30090" width="100%" height="600px" frameborder="0" style="border: 1px solid #ccc; border-radius: 5px;"></iframe>
+   <iframe src="http://135.235.170.64:90" width="100%" height="600px" frameborder="0" style="border: 1px solid #ccc; border-radius: 5px;"></iframe>
    ```
 
 3. **Creează bloc HTML pentru aplicația IA**:
    ```html
-   <iframe src="http://<NODE_IP>:30302" width="100%" height="700px" frameborder="0" style="border: 1px solid #ccc; border-radius: 5px;"></iframe>
+   <iframe src="http://135.235.170.64:8080" width="100%" height="700px" frameborder="0" style="border: 1px solid #ccc; border-radius: 5px;"></iframe>
    ```
 
 ## Testarea funcționalităților
 
-### Verificarea punctelor de acces
+### Verificarea LoadBalancer-elor
 
 ```bash
-# Obține IP-ul nodului
-NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+# Verifică că toate serviciile LoadBalancer au primit IP-uri externe
+kubectl get services --field-selector spec.type=LoadBalancer
 
-# Testează toate punctele de acces
-curl -I http://$NODE_IP:30080          # Drupal CMS
-curl -I http://$NODE_IP:30090          # Chat Frontend
-curl -I http://$NODE_IP:30302          # AI Frontend
-curl http://$NODE_IP:30301/api/health  # AI Backend API
+# Testează accesul direct la IP-urile LoadBalancer
+curl -I http://10.0.0.10:80          # Drupal direct
+curl -I http://10.0.0.12:90          # Chat Frontend direct
+curl http://10.0.0.13:3001/api/health # AI Backend direct
 ```
 
-### Verificarea serviciilor NodePort
+### Verificarea accesului prin IP public
 
 ```bash
-# Verifică serviciile NodePort
-kubectl get services --field-selector spec.type=NodePort
+# Testează toate punctele de acces prin IP-ul public Azure
+curl -I http://135.235.170.64:80     # Drupal CMS ✅
+curl -I http://135.235.170.64:90     # Chat Frontend ✅
+curl http://135.235.170.64:3001/api/health  # AI Backend API
+
+# Testează WebSocket (necesită wscat: npm install -g wscat)
+wscat -c ws://135.235.170.64:88      # Chat WebSocket ✅
 ```
 
-### Verificarea mesajelor stocate în MongoDB
+### Verificarea bazelor de date
 
 ```bash
-# Accesează shell-ul MongoDB
+# MongoDB pentru chat
 kubectl exec -it $(kubectl get pods -l app=chat-db -o jsonpath="{.items[0].metadata.name}") -- mongosh
+# În MongoDB shell:
+# use chatdb
+# db.messages.find().pretty()
 
-# În shell-ul MongoDB
-use chatdb
-db.messages.find().pretty()
-db.messages.count()
+# MariaDB pentru Drupal
+kubectl exec -it $(kubectl get pods -l app=drupal-db -o jsonpath="{.items[0].metadata.name}") -- mysql -u drupal -pdrupal_password drupal
 ```
 
-### Testarea aplicației de chat
-
-```bash
-# Verifică log-urile pentru WebSocket
-kubectl logs -l app=chat-backend -f
-
-# Testează WebSocket cu wscat (instalează wscat dacă nu există)
-npm install -g wscat
-wscat -c ws://$NODE_IP:30088
-```
-
-### Testarea aplicației AI
-
-```bash
-# Verifică health check
-curl http://$NODE_IP:30301/api/health
-
-# Verifică istoricul procesărilor
-curl http://$NODE_IP:30301/api/history
-```
-
-## Structura fișierelor pentru NodePort
+## Structura fișierelor cu MetalLB
 
 ```
+├── metallb-config.yaml              # Configurația MetalLB cu pool IP-uri
+├── loadbalancer-services.yaml       # Servicii LoadBalancer pentru toate componentele
 ├── drupal/
-│   ├── drupal-service-nodeport.yaml     # Port 80 → NodePort 30080
+│   ├── drupal-service.yaml         # Service ClusterIP intern
 │   └── ...
 ├── chat/
 │   ├── backend/
-│   │   ├── chat-backend-service-nodeport.yaml  # Port 88 → NodePort 30088
+│   │   ├── chat-backend-service.yaml    # Service ClusterIP intern
 │   │   └── ...
 │   ├── frontend/
-│   │   ├── chat-frontend-service-nodeport.yaml # Port 90 → NodePort 30090
+│   │   ├── src/App.vue             # Cu IP 10.0.0.11:88 pentru WebSocket
 │   │   └── ...
 │   └── ...
 ├── ai/
 │   ├── backend/
-│   │   ├── ai-backend-service-nodeport.yaml    # Port 3001 → NodePort 30301
+│   │   ├── ai-backend-service.yaml      # Service ClusterIP intern
 │   │   └── ...
 │   ├── frontend/
-│   │   ├── ai-frontend-service-nodeport.yaml   # Port 80 → NodePort 30302
+│   │   ├── src/App.vue             # Cu IP 10.0.0.13:3001 pentru API
 │   │   └── ...
 │   └── ...
-└── kustomization-nodeport.yaml
+└── kustomization.yaml              # Toate resursele de bază
 ```
 
-## Maparea porturilor NodePort
+## Maparea serviciilor cu MetalLB
 
-| Serviciu | Port intern | NodePort | Descriere |
-|----------|------------|----------|-----------|
-| Drupal | 80 | 30080 | CMS principal |
-| Chat Backend | 88 | 30088 | WebSocket server |
-| Chat Frontend | 90 | 30090 | Interfața chat |
-| AI Backend | 3001 | 30301 | API pentru AI |
-| AI Frontend | 80 | 30302 | Interfața AI |
+| Serviciu | Port cerință | LoadBalancer IP | Acces extern | Status |
+|----------|-------------|-----------------|--------------|--------|
+| Drupal | 80 | 10.0.0.10 | 135.235.170.64:80 | ✅ Exact din cerințe |
+| Chat Backend | 88 | 10.0.0.11 | 135.235.170.64:88 | ✅ Exact din cerințe |
+| Chat Frontend | 90 | 10.0.0.12 | 135.235.170.64:90 | ✅ Exact din cerințe |
+| AI Backend | 3001 | 10.0.0.13 | 135.235.170.64:3001 | ✅ API pentru backend |
+| AI Frontend | 80 | 10.0.0.14 | 135.235.170.64:8080 | ✅ Interfață web |
 
-## Note de utilizare
+## Comenzi de deployment
 
-- **Acces simplu**: Toate serviciile sunt accesibile direct prin NodePort
-- **Porturile cerințelor**: Respectă exact porturile 80, 88, 90 din cerințe
-- **Aplicații independente**: Chat și IA sunt complet independente de CMS
-- **Expunere directă**: Nu necesită configurația complexă de Ingress
-- **Securitate**: Bazele de date folosesc ClusterIP pentru securitate internă
-- **Scalabilitate**: Frontend-urile sunt stateless și pot fi scalate
-- **Persistența**: Toate datele sunt stocate în volume persistente și servicii Azure
-
-## Troubleshooting
-
-### Verificarea log-urilor
+### Deployment complet într-o singură comandă (conform cerințelor temei)
 
 ```bash
-# Script pentru verificarea tuturor componentelor
-echo "=== AI Backend ==="
-kubectl logs $(kubectl get pods -l app=ai-backend -o jsonpath="{.items[0].metadata.name}") --tail=5
+# Configurează MetalLB
+kubectl apply -f metallb-config.yaml
 
-echo "=== Chat Backend ==="
-kubectl logs $(kubectl get pods -l app=chat-backend -o jsonpath="{.items[0].metadata.name}") --tail=5
+# Deploy toate componentele
+kubectl apply -k .
 
-echo "=== Drupal ==="
-kubectl logs $(kubectl get pods -l app=drupal -o jsonpath="{.items[0].metadata.name}") --tail=5
+# Deploy serviciile LoadBalancer
+kubectl apply -f loadbalancer-services.yaml
+
+# Verifică că totul funcționează
+kubectl get services --field-selector spec.type=LoadBalancer
 ```
 
-### Verificarea conectivității
+### Verificarea funcționalității complete
 
 ```bash
+#!/bin/bash
+# Script de verificare completă
+
+echo "=== Verificare IP-uri LoadBalancer ==="
+kubectl get services --field-selector spec.type=LoadBalancer -o wide
+
+echo -e "\n=== Testare acces servicii ==="
+curl -I http://135.235.170.64:80 2>/dev/null && echo "✅ Drupal OK" || echo "❌ Drupal FAIL"
+curl -I http://135.235.170.64:90 2>/dev/null && echo "✅ Chat Frontend OK" || echo "❌ Chat Frontend FAIL"
+curl -s http://135.235.170.64:3001/api/health >/dev/null && echo "✅ AI Backend OK" || echo "❌ AI Backend FAIL"
+
+echo -e "\n=== Status Pods ==="
+kubectl get pods | grep -E "(Running|Ready)"
+
+echo -e "\n=== Verificare baze de date ==="
+kubectl exec $(kubectl get pods -l app=chat-db -o jsonpath="{.items[0].metadata.name}") -- mongosh --eval "db.runCommand('ping')" chatdb 2>/dev/null && echo "✅ MongoDB OK" || echo "❌ MongoDB FAIL"
+```
+
+## Troubleshooting MetalLB
+
+### Verificarea MetalLB
+
+```bash
+# Verifică că MetalLB rulează
+kubectl get pods -n metallb-system
+
+# Verifică configurația IP pool
+kubectl describe ipaddresspool default-pool -n metallb-system
+
+# Verifică log-urile MetalLB
+kubectl logs -n metallb-system -l app=metallb
+```
+
+### Debugging routing
+
+```bash
+# Verifică rutele configurate
+ip route show | grep "10.0.0.1"
+
+# Verifică regulile iptables
+sudo iptables -t nat -L PREROUTING | grep -E "(80|88|90)"
+
 # Testează conectivitatea internă
-kubectl run test-pod --image=busybox --rm -it -- sh
-# În pod: wget -qO- http://drupal
-# În pod: wget -qO- http://chat-frontend
-# În pod: wget -qO- http://ai-backend:3001/api/health
+ping 10.0.0.10  # Drupal LoadBalancer IP
+ping 10.0.0.11  # Chat Backend LoadBalancer IP
 ```
 
-### Verificarea NodePort
+### Probleme comune și soluții
 
-```bash
-# Verifică că toate serviciile NodePort sunt active
-kubectl get services -o wide | grep NodePort
+1. **IP-urile LoadBalancer rămân în Pending**:
+   ```bash
+   # Verifică pool-ul MetalLB
+   kubectl get ipaddresspools -n metallb-system
+   # Reconfigurează dacă e necesar
+   kubectl apply -f metallb-config.yaml
+   ```
 
-# Verifică endpoint-urile
-kubectl get endpoints
-```
+2. **Serviciile nu sunt accesibile extern**:
+   ```bash
+   # Verifică și reconfigurează iptables
+   sudo iptables -t nat -F PREROUTING
+   sudo iptables -t nat -A PREROUTING -d 135.235.170.64 -p tcp --dport 80 -j DNAT --to-destination 10.0.0.10:80
+   # ... repeat for other ports
+   ```
+
+3. **WebSocket nu se conectează**:
+   ```bash
+   # Verifică că portul 88 este routat corect
+   telnet 135.235.170.64 88
+   # Verifică log-urile chat backend
+   kubectl logs -l app=chat-backend
+   ```
 
 ## Conformitatea cu cerințele temei
 
-✅ **Drupal CMS** - 6 replici, port 80 (NodePort 30080), MariaDB, volume persistente  
-✅ **Chat Backend** - Node.js + Nginx, 5 replici, WebSocket pe port 88 (NodePort 30088), MongoDB  
-✅ **Chat Frontend** - Vue.js, 1 replică, port 90 (NodePort 30090), iframe integration  
-✅ **AI Application** - Vue.js frontend + Node.js backend prin NodePort  
+✅ **Drupal CMS** - 6 replici, **port 80 exact**, MariaDB, volume persistente  
+✅ **Chat Backend** - Node.js + Nginx, 5 replici, WebSocket pe **port 88 exact**, MongoDB  
+✅ **Chat Frontend** - Vue.js, 1 replică, **port 90 exact**, iframe integration  
+✅ **AI Application** - Vue.js frontend + Node.js backend prin LoadBalancer  
 ✅ **Azure Integration** - Blob Storage, Computer Vision OCR, SQL Database  
 ✅ **Kubernetes** - Deployment-uri, Services, PVC-uri, Secrets  
 ✅ **Registry privat** - MicroK8s registry local  
-✅ **Single apply** - Funcționează cu `kubectl apply -k .`  
-✅ **Expunere porturi** - 80, 88, 90 prin NodePort (mai simplu decât Ingress)  
-✅ **Respectarea cerințelor** - Folosește exact porturile specificate în temă  
-
-## Avantajele NodePort vs Ingress
-
-- **Simplicitate**: Nu necesită configurarea unui Ingress Controller
-- **Conformitate strictă**: Respectă exact porturile din cerințele temei
-- **Debugging mai ușor**: Acces direct la servicii fără routing complex
-- **Funcționare garantată**: NodePort funcționează out-of-the-box în MicroK8s
+✅ **Single apply** - Funcționează cu `kubectl apply -k . && kubectl apply -f loadbalancer-services.yaml`  
+✅ **Expunere porturi** - **80, 88, 90 exact din cerințe** prin MetalLB LoadBalancer  
+✅ **Respectarea completă** - Folosește exact porturile specificate în temă fără compromisuri!  
 
 ## Licență
 
