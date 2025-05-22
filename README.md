@@ -34,7 +34,7 @@ Infrastructura este gestionată complet prin **Kubernetes** cu expunere prin **N
 ### Kubernetes
 ```bash
 # Addon-uri MicroK8s necesare
-microk8s enable registry dns storage
+microk8s enable registry dns hostpath-storage
 ```
 
 ### Azure Services
