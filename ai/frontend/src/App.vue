@@ -66,8 +66,8 @@ export default {
             ocrResult: null,
             error: null,
             history: [],
-            // URL-ul backend-ului AI - se adapteaza automat la hostname-ul curent
-            backendUrl: `http://${window.location.hostname}:30092/api`
+            // API URL through Ingress
+            backendUrl: `http://${window.location.hostname}/api`
         };
     },
     created() {
@@ -90,25 +90,19 @@ export default {
             this.error = null;
 
             try {
-                // Creeaza FormData pentru upload
                 const formData = new FormData();
                 formData.append('image', this.selectedFile);
 
-                // Trimite fisierul la backend pentru procesare
                 const response = await axios.post(`${this.backendUrl}/process-image`, formData, {
                     headers: {
                         'Content-Type': 'multipart/form-data'
                     },
-                    timeout: 30000 // 30 secunde timeout
+                    timeout: 30000
                 });
 
                 if (response.data.success) {
                     this.ocrResult = response.data.ocrResult;
-
-                    // Actualizeaza istoricul
                     await this.fetchHistory();
-
-                    // Reseteaza formularul
                     this.$refs.fileInput.value = '';
                     this.selectedFile = null;
                 } else {
@@ -133,13 +127,11 @@ export default {
             this.isLoadingHistory = true;
             try {
                 const response = await axios.get(`${this.backendUrl}/history`);
-
                 if (response.data.success) {
                     this.history = response.data.history;
                 }
             } catch (err) {
                 console.error('Error fetching history:', err);
-                // Nu afisam eroare pentru history, ca sa nu deranjam user-ul
             } finally {
                 this.isLoadingHistory = false;
             }

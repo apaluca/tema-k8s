@@ -35,9 +35,9 @@ export default {
     },
     methods: {
         connectWebSocket() {
-            // Get the host and port from window location
+            // Connect to chat backend on port 88
             const host = window.location.hostname;
-            const port = 30088; // NodePort for WebSocket backend
+            const port = 88; // Port específic pentru chat backend
 
             // Create WebSocket connection
             this.socket = new WebSocket(`ws://${host}:${port}`);

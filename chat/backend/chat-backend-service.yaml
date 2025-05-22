@@ -3,10 +3,9 @@ kind: Service
 metadata:
   name: chat-backend
 spec:
-  type: NodePort
+  type: LoadBalancer
   ports:
   - port: 88
     targetPort: 80
-    nodePort: 30088
   selector:
     app: chat-backend

@@ -3,10 +3,9 @@ kind: Service
 metadata:
   name: chat-frontend
 spec:
-  type: NodePort
+  type: LoadBalancer
   ports:
   - port: 90
     targetPort: 80
-    nodePort: 30090
   selector:
     app: chat-frontend
