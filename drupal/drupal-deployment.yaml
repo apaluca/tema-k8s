@@ -14,18 +14,9 @@ spec:
       labels:
         app: drupal
     spec:
-      initContainers:
-      - name: drupal-installer
-        image: drupal:10.0
-        command: ["/bin/bash", "/scripts/install.sh"]
-        volumeMounts:
-        - name: install-script
-          mountPath: /scripts
-        - name: drupal-data
-          mountPath: /var/www/html/sites/default/files
       containers:
       - name: drupal
-        image: drupal:10.0
+        image: localhost:32000/drupal-custom:latest
         ports:
         - containerPort: 80
         env:
@@ -39,12 +30,20 @@ spec:
           value: drupal-db
         volumeMounts:
         - name: drupal-data
-          mountPath: /var/www/html/sites/default/files
+          mountPath: /opt/drupal/web/sites/default/files
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 60
+          periodSeconds: 30
       volumes:
       - name: drupal-data
         persistentVolumeClaim:
           claimName: drupal-pvc
-      - name: install-script
-        configMap:
-          name: drupal-autoinstall
-          defaultMode: 0755

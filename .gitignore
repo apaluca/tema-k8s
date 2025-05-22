@@ -51,3 +51,5 @@ credentials.json
 # Alte fisiere
 .DS_Store
 Thumbs.db
+
+azure-secrets.yaml
