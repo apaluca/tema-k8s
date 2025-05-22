@@ -30,21 +30,28 @@ spec:
               value: "drupal"
             - name: DRUPAL_DATABASE_PASSWORD
               value: "drupalpassword"
+            - name: DRUPAL_HASH_SALT
+              value: "f9a8u7c0xzVCBVDNkLsKqUB02PU9EYhZxLd1jQUi"
+            - name: PHP_FPM_CLEAR_ENV
+              value: "no"
           volumeMounts:
             - name: drupal-files
               mountPath: /var/www/html/sites/default/files
           readinessProbe:
             httpGet:
-              path: /core/install.php
+              path: /
               port: 80
-            initialDelaySeconds: 30
+            initialDelaySeconds: 120
             periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /core/install.php
+              path: /
               port: 80
-            initialDelaySeconds: 60
-            periodSeconds: 30
+            initialDelaySeconds: 180
+            periodSeconds: 20
       volumes:
         - name: drupal-files
           persistentVolumeClaim:
