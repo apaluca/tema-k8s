@@ -9,6 +9,7 @@ resources:
   - drupal/drupal-db-service.yaml
   - drupal/drupal-deployment.yaml
   - drupal/drupal-service.yaml
+  - drupal/drupal-autoinstall-configmap.yaml
   
   # Chat resources
   - chat/db/chat-db-pvc.yaml
