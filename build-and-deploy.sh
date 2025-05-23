@@ -113,7 +113,8 @@ print_success "All resources deployed to Kubernetes"
 print_step "Waiting for databases to be ready..."
 microk8s kubectl wait --for=condition=ready pod -l app=drupal-db --timeout=180s
 microk8s kubectl wait --for=condition=ready pod -l app=chat-db --timeout=180s
-print_success "Databases are ready"
+microk8s kubectl wait --for=condition=ready pod -l app=redis --timeout=120s
+print_success "Databases and Redis are ready"
 
 # Așteaptă ca job-ul de instalare Drupal să se termine
 print_step "Waiting for Drupal installation job to complete..."

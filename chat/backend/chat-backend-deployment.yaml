@@ -19,3 +19,10 @@ spec:
         image: localhost:32000/chat-backend:latest
         ports:
         - containerPort: 3000
+        env:
+        - name: PORT
+          value: "3000"
+        - name: REDIS_URL
+          value: "redis://redis:6379"
+        - name: MONGO_URL
+          value: "mongodb://chat-db:27017/chatdb"

@@ -156,7 +156,7 @@ drush ev "
                    <p><a href=\"/node/1\" class=\"button\">💬 Chat Application</a></p>
                    <p><a href=\"/node/2\" class=\"button\">🤖 AI Image Recognition</a></p>
                    <hr>
-                   <p><small>Node IP: $NODE_IP | Environment: \${KUBERNETES_NODE_IP:-not-set}</small></p>',
+                   <p><small>Node IP: $NODE_IP | Environment: ${KUBERNETES_NODE_IP:-not-set}</small></p>',
         'format' => 'full_html'
     ],
     'status' => 1,

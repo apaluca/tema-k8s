@@ -19,6 +19,7 @@ Infrastructura este gestionată complet prin **Kubernetes** cu imagini Docker cu
 - **Cloud**: Azure Blob Storage, Computer Vision OCR
 - **Containerizare**: Docker multi-stage builds
 - **Orchestrare**: Kubernetes (MicroK8s)
+- **Messaging / Pub-Sub**: Redis 7.2 (fan-out pentru WebSockets)
 
 ### 🗺️ Maparea serviciilor
 
@@ -28,6 +29,8 @@ Infrastructura este gestionată complet prin **Kubernetes** cu imagini Docker cu
 | **Drupal Database** | 1 | 3306 | - | Intern |
 | **Chat Backend** | 5 | 80 | 30088 | `ws://NODE_IP:30088` |
 | **Chat Frontend** | 1 | 80 | 30090 | `http://NODE_IP:30090` |
+| **Chat Database** | 1 | 27017 | - | Intern |w
+| **Redis (Chat bus)** | 1 | 6379 | - | Intern |
 | **AI Backend** | 1 | 3001 | 30101 | `http://NODE_IP:30101` |
 | **AI Frontend** | 1 | 80 | 30180 | `http://NODE_IP:30180` |
 

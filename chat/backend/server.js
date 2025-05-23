@@ -1,96 +1,73 @@
+/**
+ * Chat back-end
+ *  – Stores every message in MongoDB
+ *  – Publishes it to Redis so *all* replicas see it
+ *  – Listens on Redis to rebroadcast to each WebSocket client
+ */
+
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const moment = require('moment');
+const { createClient } = require('redis');
 
-// Connect to MongoDB
-mongoose.connect('mongodb://chat-db:27017/chatdb', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-}).catch(err => console.error('MongoDB connection error:', err));
+const {
+    PORT = 3000,
+    MONGO_URL = 'mongodb://chat-db:27017/chatdb',
+    REDIS_URL = 'redis://redis:6379',
+} = process.env;
 
-// Define Message schema
-const messageSchema = new mongoose.Schema({
-    username: String,
-    message: String,
-    timestamp: { type: Date, default: Date.now }
-});
+(async () => {
+    await mongoose.connect(MONGO_URL, { useNewUrlParser: true, useUnifiedTopology: true });
 
-const Message = mongoose.model('Message', messageSchema);
+    const messageSchema = new mongoose.Schema({
+        username: { type: String, required: true },
+        message: { type: String, required: true },
+        timestamp: { type: Date, default: Date.now },
+    });
+    const Message = mongoose.model('Message', messageSchema);
 
-// Create Express app
-const app = express();
-app.use(cors());
-app.use(express.json());
+    const pub = createClient({ url: REDIS_URL });
+    const sub = pub.duplicate();
+    await Promise.all([pub.connect(), sub.connect()]);
 
-// Define API routes
-app.get('/messages', async (req, res) => {
-    try {
-        const messages = await Message.find().sort({ timestamp: 1 });
-        res.json(messages);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Create HTTP server
-const server = http.createServer(app);
-
-// Create WebSocket server
-const wss = new WebSocket.Server({ server });
-
-wss.on('connection', (ws) => {
-    console.log('Client connected');
-
-    // Send historical messages when a client connects
-    Message.find().sort({ timestamp: 1 }).then(messages => {
-        ws.send(JSON.stringify({ type: 'history', data: messages }));
+    const app = express();
+    app.use(cors());
+    app.use(express.json());
+    app.get('/messages', async (_, res) => {
+        res.json(await Message.find().sort({ timestamp: 1 }).lean());
     });
 
-    ws.on('message', async (message) => {
-        try {
-            const data = JSON.parse(message.toString());
-            const { username, text } = data;
+    const server = http.createServer(app);
+    const wss = new WebSocket.Server({ server });
 
-            // Create new message
-            const newMessage = new Message({
-                username,
-                message: text,
-                timestamp: new Date()
-            });
+    const fanOut = (json) => {
+        wss.clients.forEach(c => c.readyState === WebSocket.OPEN && c.send(json));
+    };
+    sub.subscribe('chat', fanOut);           // rebroadcast everything from Redis
 
-            // Save to database
-            await newMessage.save();
+    wss.on('connection', (ws) => {
+        Message.find().sort({ timestamp: 1 }).lean().then((msgs) => {
+            ws.send(JSON.stringify({ type: 'history', data: msgs }));
+        });
 
-            // Broadcast to all clients
-            const broadcastMessage = {
-                type: 'message',
-                data: {
-                    username,
-                    message: text,
-                    timestamp: newMessage.timestamp
-                }
-            };
+        ws.on('message', async (raw) => {
+            try {
+                const { username, text } = JSON.parse(raw.toString());
 
-            wss.clients.forEach(client => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify(broadcastMessage));
-                }
-            });
-        } catch (err) {
-            console.error('Error processing message:', err);
-        }
+                const doc = await Message.create({ username, message: text });
+
+                const outbound = JSON.stringify({
+                    type: 'message',
+                    data: { username, message: text, timestamp: doc.timestamp },
+                });
+                await pub.publish('chat', outbound);   // every pod will fan-out
+            } catch (err) {
+                console.error('msg error:', err);
+            }
+        });
     });
 
-    ws.on('close', () => {
-        console.log('Client disconnected');
-    });
-});
-
-// Start server
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+    server.listen(PORT, () => console.log(`Chat backend ready on :${PORT}`));
+})();

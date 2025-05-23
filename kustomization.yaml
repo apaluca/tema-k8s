@@ -19,6 +19,8 @@ resources:
   - chat/backend/chat-backend-service.yaml
   - chat/frontend/chat-frontend-deployment.yaml
   - chat/frontend/chat-frontend-service.yaml
+  - chat/redis/redis-deployment.yaml
+  - chat/redis/redis-service.yaml
   
   # AI resources
   - ai/frontend/ai-frontend-deployment.yaml
