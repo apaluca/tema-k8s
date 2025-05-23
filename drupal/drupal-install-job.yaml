@@ -28,6 +28,10 @@ spec:
           value: "drupalpassword"
         - name: DRUPAL_HASH_SALT
           value: "f9a8u7c0xzVCBVDNkLsKqUB02PU9EYhZxLd1jQUi"
+        - name: KUBERNETES_NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
         command: ["/usr/local/bin/drupal-install-job.sh"]
         volumeMounts:
         - name: drupal-files

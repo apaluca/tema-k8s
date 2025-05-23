@@ -54,16 +54,57 @@ echo "🎨 Activating Mahi theme..."
 drush theme:enable mahi
 drush config:set system.theme default mahi -y
 
-# Get the current node IP dynamically
-echo "🔍 Detecting node IP..."
-NODE_IP=$(hostname -I | awk '{print $1}')
-if [ -z "$NODE_IP" ] || [ "$NODE_IP" = "127.0.0.1" ]; then
-    # Fallback: try to get from environment or use a default
-    NODE_IP="192.168.1.100"  # You'll need to replace this with your actual node IP
-    echo "⚠️  Using fallback IP: $NODE_IP"
-else
-    echo "📍 Detected node IP: $NODE_IP"
+# Get the correct Kubernetes node IP using multiple methods
+echo "🔍 Detecting correct Kubernetes node IP..."
+NODE_IP=""
+
+# Method 1: Use environment variable from Kubernetes downward API (most reliable)
+if [ ! -z "$KUBERNETES_NODE_IP" ] && [ "$KUBERNETES_NODE_IP" != "127.0.0.1" ]; then
+    NODE_IP="$KUBERNETES_NODE_IP"
+    echo "📍 Using Kubernetes downward API node IP: $NODE_IP"
 fi
+
+# Method 2: Try to get from host networking if available
+if [ -z "$NODE_IP" ] && [ -f "/proc/net/route" ]; then
+    # Try to get default route IP
+    DEFAULT_ROUTE_IP=$(ip route | grep default | awk '{print $3}' | head -1 2>/dev/null || echo "")
+    if [ ! -z "$DEFAULT_ROUTE_IP" ] && [ "$DEFAULT_ROUTE_IP" != "127.0.0.1" ]; then
+        # Get the interface IP that routes to this gateway
+        ROUTE_IP=$(ip route get "$DEFAULT_ROUTE_IP" 2>/dev/null | grep -oP 'src \K[0-9.]+' | head -1 || echo "")
+        if [ ! -z "$ROUTE_IP" ] && echo "$ROUTE_IP" | grep -qE '^192\.168\.|^10\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.|^172\.(1[6-9]|2[0-9]|3[0-1])\.'; then
+            NODE_IP="$ROUTE_IP"
+            echo "📍 Using route-based detection: $NODE_IP"
+        fi
+    fi
+fi
+
+# Method 3: Try to detect from network interfaces (look for common private IP ranges)
+if [ -z "$NODE_IP" ]; then
+    echo "🔍 Fallback: scanning network interfaces..."
+    for ip in $(hostname -I 2>/dev/null || ip addr show | grep -oP 'inet \K[0-9.]+'); do
+        # Check if IP is in common private ranges: 192.168.x.x, 10.x.x.x, 172.16-31.x.x
+        if echo "$ip" | grep -qE '^192\.168\.|^10\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.|^172\.(1[6-9]|2[0-9]|3[0-1])\.'; then
+            # Prefer 192.168.x.x range as it's most common for local networks
+            if echo "$ip" | grep -qE '^192\.168\.'; then
+                NODE_IP="$ip"
+                echo "📍 Using preferred private IP: $NODE_IP"
+                break
+            elif [ -z "$NODE_IP" ]; then
+                NODE_IP="$ip"
+                echo "📍 Using private IP: $NODE_IP"
+            fi
+        fi
+    done
+fi
+
+# Method 4: Fallback to a placeholder that can be easily replaced
+if [ -z "$NODE_IP" ] || [ "$NODE_IP" = "127.0.0.1" ]; then
+    NODE_IP="192.168.187.130"  # Use the known working IP as fallback
+    echo "⚠️  Using fallback IP (known working): $NODE_IP"
+    echo "⚠️  If this is incorrect, manually update the Drupal pages"
+fi
+
+echo "🎯 Final Node IP selected: $NODE_IP"
 
 # Create Chat page
 echo "💬 Creating Chat page..."
@@ -113,7 +154,9 @@ drush ev "
                    </ul>
                    <h3>Quick Links:</h3>
                    <p><a href=\"/node/1\" class=\"button\">💬 Chat Application</a></p>
-                   <p><a href=\"/node/2\" class=\"button\">🤖 AI Image Recognition</a></p>',
+                   <p><a href=\"/node/2\" class=\"button\">🤖 AI Image Recognition</a></p>
+                   <hr>
+                   <p><small>Node IP: $NODE_IP | Environment: \${KUBERNETES_NODE_IP:-not-set}</small></p>',
         'format' => 'full_html'
     ],
     'status' => 1,
@@ -139,6 +182,8 @@ chown -R www-data:www-data /var/www/html/sites/default
 echo "📝 Creating installation completion marker..."
 touch /var/www/html/sites/default/files/.drupal_installed
 echo "Installation completed at: $(date)" > /var/www/html/sites/default/files/.drupal_installed
+echo "Node IP used: $NODE_IP" >> /var/www/html/sites/default/files/.drupal_installed
+echo "Kubernetes Node IP env: ${KUBERNETES_NODE_IP:-not-set}" >> /var/www/html/sites/default/files/.drupal_installed
 
 echo "🎉 Drupal installation and configuration completed successfully!"
 echo "📊 Installation summary:"
@@ -147,3 +192,5 @@ echo "   - Admin user: admin / admin123"
 echo "   - Theme: Mahi"
 echo "   - Pages created: Welcome, Chat, AI OCR"
 echo "   - Node IP used: $NODE_IP"
+echo "   - K8s Node IP env: ${KUBERNETES_NODE_IP:-not-set}"
+echo "   - Detection method: $([ ! -z "$KUBERNETES_NODE_IP" ] && echo "Kubernetes downward API" || echo "Network interface scan")"

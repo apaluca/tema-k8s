@@ -104,11 +104,6 @@ if grep -q "your_.*_connection_string\|your_.*_api_key" secrets/azure-secrets.ya
 fi
 print_success "Azure secrets are configured"
 
-# Curăță job-urile anterioare dacă există
-print_step "Cleaning up previous installation jobs..."
-microk8s kubectl delete job drupal-install 2>/dev/null || true
-print_success "Cleanup completed"
-
 # Deploy la Kubernetes
 print_step "Deploying to Kubernetes cluster..."
 microk8s kubectl apply -k .
