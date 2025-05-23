@@ -4,7 +4,7 @@
 
 Proiect academic care implementează un site web complet cu:
 - **🌐 CMS Drupal** cu MySQL și tema Mahi (6 replici)
-- **💬 Sistem de chat** în timp real (WebSocket, Node.js + Nginx, Vue.js, MongoDB)
+- **💬 Sistem de chat** în timp real (WebSocket, Node.js + Nginx, Vue.js, MongoDB, Redis)
 - **🤖 Aplicație AI OCR** (Azure Computer Vision, Azure Blob Storage, Azure SQL)
 
 Infrastructura este gestionată complet prin **Kubernetes** cu imagini Docker custom și deployment automat.
@@ -195,7 +195,8 @@ Creează pagini noi în Drupal și adaugă conținut HTML:
 ├── 💬 chat/                         # Sistem chat complet
 │   ├── backend/                     # Node.js + Nginx + WebSocket
 │   ├── frontend/                    # Vue.js client
-│   └── db/                          # MongoDB (chat-db)
+│   ├── db/                          # MongoDB (chat-db)
+│   └── redis/                       # Redis
 └── 🤖 ai/                           # Aplicație OCR
     ├── backend/                     # Node.js + Azure SDK
     └── frontend/                    # Vue.js upload interface
