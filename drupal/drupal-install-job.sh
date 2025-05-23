@@ -54,57 +54,48 @@ echo "🎨 Activating Mahi theme..."
 drush theme:enable mahi
 drush config:set system.theme default mahi -y
 
-# Get the correct Kubernetes node IP using multiple methods
-echo "🔍 Detecting correct Kubernetes node IP..."
+# Get the PUBLIC IP - enhanced detection for Azure VMs
+echo "🔍 Detecting PUBLIC IP for Azure VM..."
 NODE_IP=""
 
-# Method 1: Use environment variable from Kubernetes downward API (most reliable)
-if [ ! -z "$KUBERNETES_NODE_IP" ] && [ "$KUBERNETES_NODE_IP" != "127.0.0.1" ]; then
-    NODE_IP="$KUBERNETES_NODE_IP"
-    echo "📍 Using Kubernetes downward API node IP: $NODE_IP"
+# Method 1: Try to get public IP from Azure metadata service
+echo "🌐 Trying Azure metadata service..."
+PUBLIC_IP=$(curl -s -H "Metadata:true" "http://169.254.169.254/metadata/instance/network/interface/0/ipv4/ipAddress/0/publicIpAddress?api-version=2021-02-01&format=text" 2>/dev/null || echo "")
+
+if [ ! -z "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "null" ] && echo "$PUBLIC_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+    NODE_IP="$PUBLIC_IP"
+    echo "📍 Using Azure metadata service IP: $NODE_IP"
+else
+    echo "⚠️  Azure metadata service failed or no public IP"
 fi
 
-# Method 2: Try to get from host networking if available
-if [ -z "$NODE_IP" ] && [ -f "/proc/net/route" ]; then
-    # Try to get default route IP
-    DEFAULT_ROUTE_IP=$(ip route | grep default | awk '{print $3}' | head -1 2>/dev/null || echo "")
-    if [ ! -z "$DEFAULT_ROUTE_IP" ] && echo "$DEFAULT_ROUTE_IP" | grep -qvE '^127\.|^169\.254\.' 2>/dev/null; then
-        # Get the interface IP that routes to this gateway
-        ROUTE_IP=$(ip route get "$DEFAULT_ROUTE_IP" 2>/dev/null | grep -oP 'src \K[0-9.]+' | head -1 || echo "")
-        if [ ! -z "$ROUTE_IP" ] && echo "$ROUTE_IP" | grep -qE '^192\.168\.|^10\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.|^172\.(1[6-9]|2[0-9]|3[0-1])\.'; then
-            NODE_IP="$ROUTE_IP"
-            echo "📍 Using route-based detection: $NODE_IP"
-        fi
-    fi
-fi
-
-# Method 3: Try to detect from network interfaces (look for common private IP ranges)
+# Method 2: Try external IP detection services
 if [ -z "$NODE_IP" ]; then
-    echo "🔍 Fallback: scanning network interfaces..."
-    for ip in $(hostname -I 2>/dev/null || ip addr show | grep -oP 'inet \K[0-9.]+'); do
-        # Check if IP is in common private ranges: 192.168.x.x, 10.x.x.x, 172.16-31.x.x
-        if echo "$ip" | grep -qE '^192\.168\.|^10\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.|^172\.(1[6-9]|2[0-9]|3[0-1])\.'; then
-            # Prefer 192.168.x.x range as it's most common for local networks
-            if echo "$ip" | grep -qE '^192\.168\.'; then
-                NODE_IP="$ip"
-                echo "📍 Using preferred private IP: $NODE_IP"
-                break
-            elif [ -z "$NODE_IP" ]; then
-                NODE_IP="$ip"
-                echo "📍 Using private IP: $NODE_IP"
-            fi
+    echo "🌐 Trying external IP detection..."
+    for service in "ifconfig.me" "ipecho.net/plain" "icanhazip.com"; do
+        EXTERNAL_IP=$(curl -s --connect-timeout 10 "http://$service" 2>/dev/null | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+        if [ ! -z "$EXTERNAL_IP" ]; then
+            NODE_IP="$EXTERNAL_IP"
+            echo "📍 Using external service ($service): $NODE_IP"
+            break
         fi
     done
 fi
 
-# Method 4: Fallback to a placeholder that can be easily replaced
-if [ -z "$NODE_IP" ] || [ "$NODE_IP" = "127.0.0.1" ]; then
-    NODE_IP="192.168.187.130"  # Use the known working IP as fallback
-    echo "⚠️  Using fallback IP (known working): $NODE_IP"
-    echo "⚠️  If this is incorrect, manually update the Drupal pages"
+# Method 3: Use environment variable if provided
+if [ -z "$NODE_IP" ] && [ ! -z "$PUBLIC_NODE_IP" ]; then
+    NODE_IP="$PUBLIC_NODE_IP"
+    echo "📍 Using environment variable PUBLIC_NODE_IP: $NODE_IP"
 fi
 
-echo "🎯 Final Node IP selected: $NODE_IP"
+# Method 4: Hardcoded fallback pentru Azure (din URL-ul pe care l-am văzut)
+if [ -z "$NODE_IP" ]; then
+    NODE_IP="135.235.170.64"  # IP-ul public văzut în browser
+    echo "📍 Using hardcoded Azure public IP: $NODE_IP"
+    echo "⚠️  If this is incorrect, set PUBLIC_NODE_IP environment variable"
+fi
+
+echo "🎯 Final PUBLIC IP selected: $NODE_IP"
 
 # Enable additional modules first
 echo "🔌 Enabling additional modules..."
@@ -227,12 +218,10 @@ drush ev "
             <div class=\"infrastructure-details\" style=\"background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin-bottom: 30px;\">
                 <h2>🎯 Infrastructure Details</h2>
                 <div style=\"display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;\">
-                    <div><strong>🌐 Drupal CMS:</strong><br>6 replicas, NodePort 30080</div>
-                    <div><strong>💬 Chat Backend:</strong><br>5 replicas, NodePort 30088</div>
-                    <div><strong>💻 Chat Frontend:</strong><br>1 replica, NodePort 30090</div>
-                    <div><strong>🤖 AI Backend:</strong><br>1 replica, NodePort 30101</div>
-                    <div><strong>🖼️ AI Frontend:</strong><br>1 replica, NodePort 30180</div>
-                    <div><strong>📊 Node IP:</strong><br>$NODE_IP</div>
+                    <div><strong>🌐 Public IP:</strong><br>$NODE_IP</div>
+                    <div><strong>🔗 Multi-node:</strong><br>kube1 + kube2</div>
+                    <div><strong>🚀 Replicas:</strong><br>Drupal: 6, Chat: 5</div>
+                    <div><strong>☁️ Azure:</strong><br>OCR + Blob + SQL</div>
                 </div>
             </div>
             
@@ -261,6 +250,7 @@ drush ev "
             <div style=\"background: linear-gradient(135deg, #a8e6cf 0%, #dcedc8 100%); padding: 30px; border-radius: 8px; margin-bottom: 20px;\">
                 <h1 style=\"color: #2e7d32; margin-bottom: 15px;\">💬 Real-time Chat Application</h1>
                 <p style=\"color: #388e3c; font-size: 1.1em;\">Connect and communicate with other users in real-time using WebSocket technology.</p>
+                <p style=\"color: #2e7d32; font-size: 0.9em;\"><strong>Public IP:</strong> $NODE_IP | <strong>WebSocket Port:</strong> 30088</p>
             </div>
             
             <div style=\"margin-bottom: 20px;\">
@@ -297,6 +287,7 @@ drush ev "
             <div style=\"background: linear-gradient(135deg, #bbdefb 0%, #e3f2fd 100%); padding: 30px; border-radius: 8px; margin-bottom: 20px;\">
                 <h1 style=\"color: #1565c0; margin-bottom: 15px;\">🤖 AI Image Recognition & OCR</h1>
                 <p style=\"color: #1976d2; font-size: 1.1em;\">Upload images and extract text using Azure Computer Vision OCR technology.</p>
+                <p style=\"color: #1565c0; font-size: 0.9em;\"><strong>Public IP:</strong> $NODE_IP | <strong>API Port:</strong> 30101</p>
             </div>
             
             <div style=\"margin-bottom: 20px;\">
@@ -347,20 +338,6 @@ foreach (\$existing_links as \$link) {
     \$link->delete();
 }
 
-// Update the existing default Home link instead of creating a new one
-\$menu_link_manager = \Drupal::service('plugin.manager.menu.link');
-\$menu_links = \$menu_link_manager->loadLinksByRoute('<front>');
-foreach (\$menu_links as \$menu_link) {
-    if (\$menu_link->getMenuName() == 'main') {
-        // Update the existing home link
-        \$menu_link_manager->updateDefinition(\$menu_link->getPluginId(), [
-            'title' => '🏠 Home',
-            'weight' => -10,
-        ]);
-        break;
-    }
-}
-
 // Add Chat link  
 \$chat_link = \$menu_link_storage->create([
     'title' => '💬 Chat',
@@ -400,31 +377,6 @@ foreach (\$menu_links as \$menu_link) {
 echo 'Main menu updated with login link and navigation items (duplicates removed)';
 " || echo "⚠️  Failed to create menu"
 
-# Configure the theme to show the main menu
-echo "🎨 Configuring theme to display main menu..."
-drush ev "
-// Place the main menu block in the primary menu region
-\$block_storage = \Drupal::entityTypeManager()->getStorage('block');
-
-// Create main menu block
-\$main_menu_block = \$block_storage->create([
-    'id' => 'mahi_main_menu',
-    'theme' => 'mahi',
-    'region' => 'primary_menu',
-    'plugin' => 'system_menu_block:main',
-    'settings' => [
-        'label' => 'Main navigation',
-        'label_display' => 0,
-        'level' => 1,
-        'depth' => 0,
-    ],
-    'weight' => 0,
-]);
-\$main_menu_block->save();
-
-echo 'Main menu block placed in theme';
-" || echo "⚠️  Failed to configure menu block"
-
 # Set homepage and configure site settings
 echo "🏠 Configuring site settings..."
 drush config:set system.site page.front /node/1 -y || echo "⚠️  Failed to set front page"
@@ -445,9 +397,8 @@ chown -R www-data:www-data /var/www/html/sites/default
 echo "📝 Creating installation completion marker..."
 touch /var/www/html/sites/default/files/.drupal_installed
 echo "Installation completed at: $(date)" > /var/www/html/sites/default/files/.drupal_installed
-echo "Node IP used: $NODE_IP" >> /var/www/html/sites/default/files/.drupal_installed
-echo "Kubernetes Node IP env: ${KUBERNETES_NODE_IP:-not-set}" >> /var/www/html/sites/default/files/.drupal_installed
-echo "Site features: Enhanced homepage, Login menu, Chat integration, AI OCR" >> /var/www/html/sites/default/files/.drupal_installed
+echo "PUBLIC IP used: $NODE_IP" >> /var/www/html/sites/default/files/.drupal_installed
+echo "Multi-node cluster: kube1 + kube2" >> /var/www/html/sites/default/files/.drupal_installed
 
 echo "🎉 Drupal installation and configuration completed successfully!"
 echo "📊 Installation summary:"
@@ -456,7 +407,7 @@ echo "   - Admin user: admin / admin123"
 echo "   - Theme: Mahi with custom styling"
 echo "   - Pages: Enhanced homepage, Chat app, AI OCR app"
 echo "   - Menu: Main navigation with login link"
-echo "   - Node IP: $NODE_IP"
+echo "   - PUBLIC IP: $NODE_IP (corrected from internal IP)"
 echo "   - Login URL: http://$NODE_IP:30080/user/login"
 echo "   - Admin URL: http://$NODE_IP:30080/admin"
 echo ""

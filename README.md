@@ -119,13 +119,13 @@ microk8s kubectl get pods -o wide
 # Verifică serviciile NodePort
 microk8s kubectl get services --field-selector spec.type=NodePort
 
-# IP nod Kubernetes
+# IP privat nod Kubernetes
 NODE_IP=$(microk8s kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
 echo "Node IP: $NODE_IP"
 ```
 
 ### 🌐 Accesare aplicații
-- **Drupal CMS**: `http://NODE_IP:30080` (instalare manuală necesară)
+- **Drupal CMS**: `http://NODE_IP:30080`
 - **Chat Live**: `http://NODE_IP:30090`
 - **AI OCR**: `http://NODE_IP:30180`
 
@@ -138,51 +138,6 @@ curl http://$NODE_IP:30101/api/health      # AI Backend health
 
 # Test WebSocket (necesită wscat: npm install -g wscat)
 wscat -c ws://$NODE_IP:30088               # Chat Backend
-```
-
-## 🎨 Configurare Drupal
-
-### Instalare manuală
-După deployment, accesează `http://NODE_IP:30080` și urmează pașii:
-
-1. **Selectează limba**: English
-2. **Profil de instalare**: Standard
-3. **Configurare bază de date**:
-   - Database host: `drupal-db`
-   - Database name: `drupal`
-   - Database username: `drupal`
-   - Database password: `drupalpassword`
-4. **Configurare site**:
-   - Site name: Kubernetes Demo Site
-   - Admin username: `admin`
-   - Admin password: `admin123`
-   - Admin email: `admin@example.com`
-
-### Activare temă Mahi
-După instalare:
-```bash
-# Conectează-te la un pod Drupal
-microk8s kubectl exec -it deployment/drupal -- bash
-
-# Activează tema Mahi
-cd /var/www/html
-vendor/bin/drush theme:enable mahi
-vendor/bin/drush config:set system.theme default mahi
-```
-
-### Adăugare conținut cu iframe-uri
-Creează pagini noi în Drupal și adaugă conținut HTML:
-
-**Pentru Chat:**
-```html
-<h2>Real-time Chat Application</h2>
-<iframe src="http://NODE_IP:30090" width="100%" height="600px" frameborder="0"></iframe>
-```
-
-**Pentru AI OCR:**
-```html
-<h2>OCR Image Processing</h2>
-<iframe src="http://NODE_IP:30180" width="100%" height="700px" frameborder="0"></iframe>
 ```
 
 ## 📁 Structura proiectului
@@ -232,7 +187,3 @@ Proiectul urmează convenții consistente pentru toate componentele:
 - ✅ **Registry privat** - MicroK8s registry localhost:32000  
 - ✅ **Single apply** - Deployment complet cu `kubectl apply -k .`
 - ✅ **Zero configurare manuală după deploy** - Doar instalarea Drupal prin web UI
-
----
-
-> 💡 **Tip**: Pentru debugging rapid, folosește `microk8s kubectl get events --sort-by=.metadata.creationTimestamp` pentru a vedea ce se întâmplă în cluster.
